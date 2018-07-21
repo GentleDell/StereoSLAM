@@ -175,18 +175,14 @@ bool load_image(cv::Mat & left_image, cv::Mat & right_image, std::string filepat
     return true;
 }
 
-void find_inliers(const std::vector<KeyPoint>& keypoints1,
-                const std::vector<KeyPoint>& keypoints2,
-                std::vector<DMatch>& matches,
-                std::vector<DMatch>& inlier_matches,
-                bool drawflag,
-                const Mat& img1,
-                const Mat& img2)
+void find_inliers(std::vector<KeyPoint>& keypoints1,
+                  std::vector<KeyPoint>& keypoints2,
+                  std::vector<DMatch>& matches,
+                  std::vector<DMatch>& inlier_matches)
 {
     std::vector< DMatch > good_matches;
-    std::vector< int > flag_inlinematches;
     std::vector<Point2f> src_featpoint, dst_featpoint;
-    cv::Mat H;
+    cv::Mat fundamentalMat, flag_inliermatches;
 
     //-- Sort matches and preserve top 30% matches
     std::sort(matches.begin(), matches.end());  // in DMatch, "<" is defined to compare distance
@@ -196,40 +192,35 @@ void find_inliers(const std::vector<KeyPoint>& keypoints1,
         good_matches.push_back( matches[i] );
     }
 
-    std::cout << "Calculating homography using " << ptsPairs << " point pairs." << std::endl;
+    //-- obtain coordinates of feature points
     for( size_t i = 0; i < good_matches.size(); i++ )
    {
-       src_featpoint.push_back( keypoints1[ good_matches[i].queryIdx ].pt );  ??? need to del useless keypoints?
+       src_featpoint.push_back( keypoints1[ good_matches[i].queryIdx ].pt );  //??? need to del useless keypoints?
        dst_featpoint.push_back( keypoints2[ good_matches[i].trainIdx ].pt );
    }
-    H = findHomography( src_featpoint, dst_featpoint, flag_inlinematches, RANSAC);
+
+    //-- estimate the fundamental matrix and refine positions of feature points
+    std::vector<Point2f> newsrc_featpoint, newdst_featpoint;
+    fundamentalMat = findFundamentalMat(src_featpoint, dst_featpoint, flag_inliermatches, FM_RANSAC, 2, 0.99);
+    correctMatches(fundamentalMat, src_featpoint, dst_featpoint, newsrc_featpoint, newdst_featpoint);
+
+    /* After estimating fundamatal matrix, it would be better to conduct a guided search for matches */
+
 
     for (size_t i = 0; i < good_matches.size(); i++){
-        //-- Get the liners from good matches by findHomography()
-        if (flag_inlinematches[i]){
-            inlier_matches.push_back(good_matches[i]);  // with keypoints1/2, we only need matches
+        if (flag_inliermatches.at<int>(1,i)){
+            inlier_matches.push_back(good_matches[i]);
+            keypoints1[ good_matches[i].queryIdx ].pt = newsrc_featpoint[i];
+            keypoints2[ good_matches[i].trainIdx ].pt = newdst_featpoint[i];
         }
-    }
-
-    if (drawflag){
-        Mat img_matches;
-        drawMatches( img1, keypoints1, img2, keypoints2,inlier_matches, img_matches, Scalar(0,255,0), Scalar(0,255,0),  // setting color
-                     std::vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS  );
-        cv::namedWindow("Matches", CV_WINDOW_NORMAL);
-        cv::imshow("Matches",img_matches);
-        waitKey(20); // give sys enough time to draw the result
     }
 }
 
-std::vector<DMatch> match_img(cv::Mat& left_image, cv::Mat& righ_image, bool draw_flag,
+std::vector<DMatch> match_img(cv::Mat& left_image, cv::Mat& righ_image,
                               std::vector<KeyPoint>& keypoints1, std::vector<KeyPoint>& keypoints2,
                               cv::Mat& descriptors1, cv::Mat& descriptors2)
 {
     std::vector<DMatch> matches, inlier_matches;
-    // declare keypoint and matches
-//    std::vector<KeyPoint> keypoints1, keypoints2;
-//    std::vector<DMatch> matches, inlier_matches;
-//    cv::Mat descriptors1, descriptors2; // cv::UMat is a new container in opencv3 for gpu-based image operating
 
     // instantiate detectors/matchers
     SURFDetector surf;
@@ -239,22 +230,90 @@ std::vector<DMatch> match_img(cv::Mat& left_image, cv::Mat& righ_image, bool dra
     surf(righ_image, Mat(), keypoints2, descriptors2);
     matcher.match(descriptors1, descriptors2, matches);
 
-//    std::cout << "FOUND " << keypoints1.size() << " keypoints on first image" << std::endl;
-//    std::cout << "FOUND " << keypoints2.size() << " keypoints on second image" << std::endl;
-
-    find_inliers(keypoints1, keypoints2, matches, inlier_matches, draw_flag, left_image, righ_image);
+    find_inliers(keypoints1, keypoints2, matches, inlier_matches);
 
     return inlier_matches;
 }
 
+/* ESTIMATE FUNDAMENTAL MATRICS, version 0.01, RANSAC is not included.
+ * Algorithm: normalized 8-point algoritm, in "Mutiple View Geometry in Computer Vision", Section 11.2 (p282)
+ *            Iterative algorithm could be involved in later version.
+ */
+cv::Mat find_FundaMat(std::vector<KeyPoint> keypoints_left, std::vector<KeyPoint> keypoints_right, std::vector<DMatch> inlier_matches){
 
-// in this version, we output the depth; in the future, we will save them as a vector
-cv::Mat reprojectTo3D(std::vector<KeyPoint> keypoints_left, std::vector<KeyPoint> keypoints_right, std::vector<DMatch> matches){
-    cv::Mat DepthMap;
+    int point_count = inlier_matches.size();
+    vector<Point2f> points1(point_count);
+    vector<Point2f> points2(point_count);
 
+    // initialize the points here ...
+    for( int i = 0; i < point_count; i++ )
+    {
+        points1[i] = keypoints_left[inlier_matches[i].queryIdx].pt;
+        points2[i] = keypoints_right[inlier_matches[i].trainIdx].pt;
+    }
 
-    return DepthMap;
+    Mat fundamental_matrix =
+     findFundamentalMat(points1, points2, FM_RANSAC, 2, 0.99);
+
+    return fundamental_matrix;
 }
+
+/* REPROJECT 2D IMAGE FEATURE POINTS TO 3D MAP POINT.
+ * Algrithm: An optimal solution mentioned in "Mutiple View Geometry in Computer Vision", Section 12.5(p315)
+ *
+ * Input arguments *
+ * keypoints_left: vector of keypoints in the left image.
+ * keypoints_right: vector of keypoints in the right image.
+ * F : Fundamental Matrix.
+ * flag : 1, using algrithm mentioned above; 0, using function of OpenCV.
+ *        Default value is 1;
+ *
+ * Output argument *
+ *
+ */
+std::vector< Point3f > reprojectTo3D(
+        std::vector<KeyPoint> vfeaturepoint1,
+        std::vector<KeyPoint> vfeaturepoint2,
+        std::vector< cv::DMatch > matches,
+        cv::Mat ProjMat1 = cv::Mat(),      // knowledge: Mat& can not be initiated as a Mat as it is a address
+        cv::Mat ProjMat2 = cv::Mat(),
+        cv::Mat FundaMat = cv::Mat(),
+        bool flag = 0)
+{
+    int i_ct;
+    std::vector< Point3f > vtriangularpoints;
+
+    if (flag){
+        cv::Mat R1, R2, T1, T2; // Transformation matrics
+        double x1, x2, y1, y2; // Image coordinates of give keypoints
+
+        // ...
+
+    }
+    else{
+        cv::Mat point4D;
+        cv::Point3f triPoints;
+        std::vector< Point2f > vpoints1, vpoints2;
+
+        for ( i_ct = 0; i_ct < matches.size(); i_ct++ ){
+            vpoints1.push_back( vfeaturepoint1[ matches[i_ct].queryIdx ].pt );
+            vpoints2.push_back( vfeaturepoint2[ matches[i_ct].trainIdx ].pt );
+        }
+
+        cv::triangulatePoints(ProjMat1, ProjMat2, vpoints1, vpoints2, point4D);
+
+        /* !Be careful that index starts from 0;
+         * It might be better to save the point cloud in 4d and do not normalize */
+        for(i_ct = 0; i_ct < point4D.cols; i_ct++){
+            triPoints.x = point4D.at<float> (0, i_ct) / point4D.at<float> (3, i_ct);
+            triPoints.y = point4D.at<float> (1, i_ct) / point4D.at<float> (3, i_ct);
+            triPoints.z = point4D.at<float> (2, i_ct) / point4D.at<float> (3, i_ct);
+            vtriangularpoints.push_back(triPoints);
+        }
+    }
+    return vtriangularpoints;
+}
+
 
 void find_polynomialroots (double coeff[], double roots[], int size)
 {
@@ -275,8 +334,9 @@ int main()
     cv::Mat left_image, right_image;
 
     cv::Mat descriptors1, descriptors2; // cv::UMat is a new container in opencv3 for gpu-based image operating
-    std::vector<KeyPoint> keypoints1, keypoints2;
-    std::vector<DMatch> inlier_matches;
+    std::vector< KeyPoint > keypoints1, keypoints2;
+    std::vector< Point3f > v3DPoints;
+    std::vector< DMatch > inlier_matches;
 
     bool funcflag = 1, drawflag = 1; // 0 use camera, 1 use KITTI 00;
     char * paramPathleft = "/home/zhant/Documents/camera2_left.yml";
@@ -290,13 +350,12 @@ int main()
 
         cv::Size imageSize;
         cv::VideoCapture capture_left,  capture_right;
-        cv::Mat camera_Mat_left, camera_Mat_right,
+        cv::Mat camera_Mat_left, camera_Mat_right,  // 3*3 Mat
                 distCoeffs_left, distCoeffs_right;
 
         cout << "reading undistortion parameters" << endl;
         read_param(camera_Mat_left, distCoeffs_left, imageSize, paramPathleft);
         read_param(camera_Mat_right, distCoeffs_right, imageSize, paramPathright);
-
         capture_left.open("/dev/leftcam");
         capture_right.open("/dev/rightcam");
         if(capture_left.isOpened() && capture_right.isOpened()) {
@@ -311,8 +370,7 @@ int main()
                 left_image = calibrate_img(left_image, camera_Mat_left, distCoeffs_left);
                 right_image = calibrate_img(right_image, camera_Mat_right, distCoeffs_right);
 
-                inlier_matches = match_img(left_image, right_image, drawflag,
-                                            keypoints1, keypoints2, descriptors1, descriptors2);
+                inlier_matches = match_img(left_image, right_image, keypoints1, keypoints2, descriptors1, descriptors2);
 
                 char key = (char)waitKey(5);
                 if (key == 's'){
@@ -331,7 +389,7 @@ int main()
     else{
         char * paramfilepath = "/home/zhant/Documents/00/calib.txt";
         std::string filepath = "/home/zhant/Documents/00/";
-        cv::Mat Pl(3,4,CV_32F), Pr(3,4,CV_32F);     // camera matrix of left and right cameras
+        cv::Mat Pl(3,4,CV_32F), Pr(3,4,CV_32F);     // Projection matrix of left and right cameras
 
         if(!load_cameraparam(Pl,Pr,paramfilepath))
         {
@@ -341,13 +399,25 @@ int main()
 
         int imgfile_ct = 0;
         for(;;){
-            if(!load_image(left_image, right_image, filepath, imgfile_ct))
-            {
+
+            if(!load_image(left_image, right_image, filepath, imgfile_ct)){
                 return EXIT_FAILURE;
             }
 
-            inlier_matches = match_img(left_image, right_image, drawflag,
-                                        keypoints1, keypoints2, descriptors1, descriptors2);
+            inlier_matches = match_img(left_image, right_image, keypoints1, keypoints2,
+                                       descriptors1, descriptors2);
+
+            v3DPoints = reprojectTo3D(keypoints1, keypoints2, inlier_matches, Pl, Pr);
+
+
+//            if (drawflag){
+//                Mat img_matches;
+//                drawMatches( left_image, keypoints1, right_image, keypoints2, inlier_matches, img_matches, Scalar(0,255,0), Scalar(0,255,0),  // setting color
+//                             std::vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS  );
+//                cv::namedWindow("Matches", CV_WINDOW_NORMAL);
+//                cv::imshow("Matches",img_matches);
+//                waitKey(0); // give sys enough time to draw the result
+//            }
 
             imgfile_ct++;
         }
@@ -356,6 +426,7 @@ int main()
 }
 
 
+//// call the roots finding
 //int main(void){
 //    int size = 6;
 //    double a[6] = { -1, 0, 0, 0, 0, 1 };
@@ -366,6 +437,15 @@ int main()
 //}
 
 
+//// calibrated images
+// left_image = calibrate_img(left_image, camera_Mat_left, distCoeffs_left);
+// right_image = calibrate_img(right_image, camera_Mat_right, distCoeffs_right);
 
-//            left_image = calibrate_img(left_image, camera_Mat_left, distCoeffs_left);
-//            right_image = calibrate_img(right_image, camera_Mat_right, distCoeffs_right);
+//// show matches
+//if (drawflag){
+//    Mat img_matches;
+//    drawMatches( left_image, keypoints1, right_image, keypoints2, inlier_matches, img_matches, Scalar(0,255,0), Scalar(0,255,0),  // setting color
+//                 std::vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS  );
+//    cv::namedWindow("Matches", CV_WINDOW_NORMAL);
+//    cv::imshow("Matches",img_matches);
+//    waitKey(0); // give sys enough time to draw the result
