@@ -27,6 +27,9 @@ enum{
     DRAW_3D_POINT       = 4
 };
 
+const int GOOD_PTS_MAX = 300;
+const float GOOD_PORTION = 0.3f;
+
 
 /* A frame includes avaliable information and operations of given stereo images.*/
 class Frame
@@ -66,10 +69,6 @@ public:     // functions
 
 
 public:     // variances
-
-    int GOOD_PTS_MAX;
-
-    float GOOD_PORTION;
 
     cv::Mat T_w2c;  // pose of this frame
 

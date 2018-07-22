@@ -5,18 +5,11 @@ using namespace std;
 
 // basic constructor
 Frame::Frame()
-{
-    GOOD_PTS_MAX = 300;
-    GOOD_PORTION = 0.3f;
-}
+{}
 
 // constructor generating necessary data
 Frame::Frame(cv::Mat image1, cv::Mat image2, cv::Mat CamProjMat1, cv::Mat CamProjMat2, bool flag)
 {
-
-    GOOD_PTS_MAX = 300;
-    GOOD_PORTION = 0.3f;
-
     match_images(image1, image2);
     reprojectTo3D(CamProjMat1, CamProjMat2, flag);
 }
@@ -217,13 +210,7 @@ bool Frame::drawframe(cv::Mat image1, cv::Mat image2, int drawing_mode, cv::Mat 
         cv::Affine3f transform = cv::viz::makeTransformToGlobal(cv::Vec3f(1.0f, 0.0f,0.0f), cv::Vec3f(0.0f, 1.0f, 0.0f),cv::Vec3f(0.0f,0.0f, 1.0f), cam_pos);
 
         /// Create a cloud widget.
-        cv::Mat point_cloud(1, vinframetriangular_points.size(), CV_32FC3);
-        cv::Point3f* data = point_cloud.ptr<cv::Point3f>();
-        for(int i_ct = 0; i_ct < vinframetriangular_points.size(); i_ct++)
-        {
-            data[i_ct] = vinframetriangular_points[i_ct];
-        }
-        cv::viz::WCloud cloud_widget(point_cloud, cv::viz::Color::green());
+        cv::viz::WCloud cloud_widget(vinframetriangular_points, cv::viz::Color::green());
 
         /// Pose of the widget in camera frame
         cv::Affine3f cloud_pose = cv::Affine3f().translate(CamProjMat.col(3));
