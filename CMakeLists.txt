@@ -2,38 +2,50 @@
 cmake_minimum_required(VERSION 2.8)
 
 # Define project name
-project(stereo_matching_project)
+project(STEREO_SLAM)
 
-# Find OpenCV, you may need to set OpenCV_DIR variable
-# to the absolute path to the directory containing OpenCVConfig.cmake file
-# via the command line or GUI
 find_package(OpenCV REQUIRED)
 find_package(GSL)   # GNU Scientific Library (for polynomial roots 15/07/2018,zhant.deng)
 
-# If the package has been found, several variables will
-# be set, you can find the full list with descriptions
-# in the OpenCVConfig.cmake file.
-# Print some message showing some of them
+
+# *************** OpenCV *****************
 message(STATUS "**OpenCV library status:")
 message(STATUS "    //version: ${OpenCV_VERSION}")
 message(STATUS "    //libraries: ${OpenCV_LIBS}")
 message(STATUS "    //include path: ${OpenCV_INCLUDE_DIRS}")
 
+if(CMAKE_VERSION VERSION_LESS "2.8.11")
+  include_directories(${OpenCV_INCLUDE_DIRS})
+endif()
+
+
+# **************** GSL *******************
 set(GSL_LIBS gsl;gslcblas;m)
 message(STATUS "**GSL library status:")
 message(STATUS "    //version: ${GSL_VERSION}")
 message(STATUS "    //libraries: ${GSL_LIBS}")
 message(STATUS "    //include path: ${GSL_INCLUDE_DIRS}")
 
-if(CMAKE_VERSION VERSION_LESS "2.8.11")
-  # Add OpenCV headers location to your include paths
-  include_directories(${OpenCV_INCLUDE_DIRS})
-endif()
+
+# **************** Mine ******************
+include_directories(
+    ${PROJECT_SOURCE_DIR}
+    ${PROJECT_SOURCE_DIR}/include
+    )
+add_library(${PROJECT_NAME} SHARED
+    src/Frame.cpp
+    )
+target_link_libraries(${PROJECT_NAME}
+    ${OpenCV_LIBS}
+    ${GSL_LIBS}
+    )
+
+
 
 # Declare the executable target built from your sources
-add_executable(stereo_matching matching.cpp)
+add_executable(stereo_slam Example/system.cpp)
 
 # Link your application with OpenCV libraries
-target_link_libraries(stereo_matching ${OpenCV_LIBS})
-
-target_link_libraries(stereo_matching ${GSL_LIBS})
+target_link_libraries(stereo_slam ${OpenCV_LIBS})
+target_link_libraries(stereo_slam ${GSL_LIBS})
+target_link_libraries(stereo_slam ${PROJECT_NAME})
