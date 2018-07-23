@@ -15,6 +15,9 @@
 #include "opencv2/xfeatures2d.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 
+#include "map.h"
+#include "mappoint.h"
+
 using namespace std;
 using namespace cv::xfeatures2d;
 
@@ -38,7 +41,7 @@ public:     // functions
 
     Frame();
 
-    Frame(cv::Mat image1, cv::Mat image2, cv::Mat CamProjMat1, cv::Mat CamProjMat2, bool flag);
+    Frame(cv::Mat image1, cv::Mat image2, cv::Mat CamProjMat1, cv::Mat CamProjMat2, Map &cloudmap, bool flag, int num);
 
     void match_images(cv::Mat image1, cv::Mat image2);
 
@@ -57,7 +60,8 @@ public:     // functions
      * Output argument *
      *
      */
-    void reprojectTo3D(cv::Mat CamProjMat1, cv::Mat CamProjMat2, bool flag);
+
+    void reprojectTo3D(cv::Mat CamProjMat1, cv::Mat CamProjMat2, std::vector<Mappoint> &v_mappoints, bool flag);
 
     /* OUTPUT SAME VARIANCE OF THE CLASS OBJECT TO CHECK IT*/
     void checkframe();
@@ -69,22 +73,6 @@ public:     // functions
 
 
 public:     // variances
-
-    cv::Mat T_w2c;  // pose of this frame
-
-    std::vector< cv::Point3f > vinframetriangular_points;   // 3D points vector of this frame (3D points between frames are recorded in Mappoints)
-
-    std::vector< cv::DMatch > vinframe_matches, vinframeinlier_matches;   // matches of the given stereo images
-
-    std::vector< vector< cv::DMatch > > voutframeinlier_matches;    // matches between this frame and other frames
-
-    vector< int > voutframematches_number; // number of matched frames
-
-    std::vector< cv::KeyPoint > vfeaturepoints_l, vfeaturepoints_r;     // featurepoints of left and right image
-
-    cv::Mat descriptors_l, descriptors_r; // descriptors of above featurepoints
-
-    cv::Mat fundamentalMat, essencialMat;
 
     template<class KPMatcher>
     struct SURFMatcher
@@ -110,6 +98,26 @@ public:     // variances
             surf->detectAndCompute(in, mask, pts, descriptors, useProvided);
         }
     };
+
+    int name;
+
+    cv::Mat T_w2c;  // pose of this frame
+
+    std::vector< int > vMappoints_indexnum;   // Map points' number in Map
+
+    std::vector< cv::DMatch > vinframe_matches, vinframeinlier_matches;   // matches of the given stereo images
+
+    std::vector< vector< cv::DMatch > > voutframeinlier_matches;    // matches between this frame and other frames
+
+    vector< int > voutframematches_number; // number of matched frames
+
+    std::vector< cv::KeyPoint > vfeaturepoints_l, vfeaturepoints_r;     // featurepoints of left and right image
+
+    cv::Mat descriptors_l, descriptors_r; // descriptors of above featurepoints
+
+    cv::Mat fundamentalMat, essencialMat;
+
+    Map *pframeTomap;   // pointer points to the global point cloud map
 
 };
 

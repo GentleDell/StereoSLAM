@@ -34,6 +34,8 @@ include_directories(
     )
 add_library(${PROJECT_NAME} SHARED
     src/Frame.cpp
+    src/Map.cpp
+    src/Mappoint.cpp
     )
 target_link_libraries(${PROJECT_NAME}
     ${OpenCV_LIBS}

@@ -15,6 +15,7 @@
 #include "opencv2/features2d.hpp"
 #include "opencv2/xfeatures2d.hpp"
 
+#include "map.h"
 #include "frame.h"
 
 using namespace cv;
@@ -165,6 +166,8 @@ int main()
     char * paramPathleft = "/home/zhant/Documents/camera2_left.yml";
     char * paramPathright = "/home/zhant/Documents/camera1_right.yml";
 
+    Map pointcloudMap;
+
     cout << "Built with OpenCV " << CV_VERSION << endl;
 
     /* using realtime video
@@ -183,6 +186,7 @@ int main()
         capture_right.open("/dev/rightcam");
         if(capture_left.isOpened() && capture_right.isOpened()) {
             cout << "Both are opened" << endl;
+            int imgfile_ct = 0;
             for(;;){
                 capture_left >> left_image;
                 capture_right >> right_image;
@@ -193,12 +197,20 @@ int main()
                 left_image = calibrate_img(left_image, camera_Mat_left, distCoeffs_left);
                 right_image = calibrate_img(right_image, camera_Mat_right, distCoeffs_right);
 
-                Frame newframe = Frame(left_image, right_image, camera_Mat_left, camera_Mat_right, bUsemytriangular);
+                Frame newframe = Frame(left_image, right_image,
+                                       camera_Mat_left, camera_Mat_right,
+                                       pointcloudMap, bUsemytriangular, imgfile_ct);
+
+//                newframe.checkframe();
+
+                newframe.drawframe(left_image, right_image, DRAW_3D_POINT, camera_Mat_right);
 
                 char key = (char)waitKey(5);
                 if (key == 's'){
                     break;
                 }
+
+                imgfile_ct++;
             }
         }
         else{
@@ -227,7 +239,11 @@ int main()
                 return EXIT_FAILURE;
             }
 
-            Frame newframe = Frame(left_image, right_image, Pl, Pr, bUsemytriangular);
+            Frame newframe = Frame(left_image, right_image,
+                                   Pl, Pr, pointcloudMap,
+                                   bUsemytriangular, imgfile_ct);
+
+//            newframe.checkframe();
 
             newframe.drawframe(left_image, right_image, DRAW_3D_POINT, Pr);
 

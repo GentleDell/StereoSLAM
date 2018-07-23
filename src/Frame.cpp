@@ -3,15 +3,23 @@
 
 using namespace std;
 
+const int EMPTYFRAME = -1;
+
 // basic constructor
 Frame::Frame()
-{}
+{
+    name = EMPTYFRAME;
+}
 
 // constructor generating necessary data
-Frame::Frame(cv::Mat image1, cv::Mat image2, cv::Mat CamProjMat1, cv::Mat CamProjMat2, bool flag)
+Frame::Frame(cv::Mat image1, cv::Mat image2, cv::Mat CamProjMat1, cv::Mat CamProjMat2,  Map &cloudmap, bool flag, int num)
 {
+    name = num;
+
     match_images(image1, image2);
-    reprojectTo3D(CamProjMat1, CamProjMat2, flag);
+    reprojectTo3D(CamProjMat1, CamProjMat2, cloudmap.cloudMap, flag);
+
+    pframeTomap = &cloudmap;
 }
 
 void Frame::find_inliers(void)
@@ -67,20 +75,19 @@ void Frame::match_images(cv::Mat image1, cv::Mat image2)
     find_inliers();
 }
 
-void Frame::reprojectTo3D(cv::Mat ProjMat1, cv::Mat ProjMat2, bool flag = 0)
+void Frame::reprojectTo3D(cv::Mat ProjMat1, cv::Mat ProjMat2, std::vector< Mappoint > &v_mappoints, bool flag = 0)
 {
+    cv::Mat point4D;
+    cv::Point3f triPoints;
+    std::vector< cv::Point2f > vpoints1, vpoints2;
+
     if (flag){
         cv::Mat R1, R2, T1, T2; // Transformation matrics
         double x1, x2, y1, y2; // Image coordinates of give keypoints
 
         // ...
-
     }
     else{
-        cv::Mat point4D;
-        cv::Point3f triPoints;
-        std::vector< cv::Point2f > vpoints1, vpoints2;
-
         for (int i_ct = 0; i_ct < vinframeinlier_matches.size(); i_ct++ ){
             vpoints1.push_back( vfeaturepoints_l[ vinframeinlier_matches[i_ct].queryIdx ].pt );
             vpoints2.push_back( vfeaturepoints_r[ vinframeinlier_matches[i_ct].trainIdx ].pt );
@@ -90,12 +97,22 @@ void Frame::reprojectTo3D(cv::Mat ProjMat1, cv::Mat ProjMat2, bool flag = 0)
 
         /* !Be careful that index starts from 0;
          * It might be better to save the point cloud in 4d and do not normalize */
-        for(int i_ct = 0; i_ct < point4D.cols; i_ct++){
-            triPoints.x = point4D.at<float> (0, i_ct) / point4D.at<float> (3, i_ct);
-            triPoints.y = point4D.at<float> (1, i_ct) / point4D.at<float> (3, i_ct);
-            triPoints.z = point4D.at<float> (2, i_ct) / point4D.at<float> (3, i_ct);
-            vinframetriangular_points.push_back(triPoints);
+
+        int maplength = v_mappoints.size();
+        for(int i_ct = maplength; i_ct < maplength+point4D.cols; i_ct++){
+            triPoints = cv::Point3f(point4D.at<float> (0, i_ct) / point4D.at<float> (3, i_ct),
+                                    point4D.at<float> (1, i_ct) / point4D.at<float> (3, i_ct),
+                                    point4D.at<float> (2, i_ct) / point4D.at<float> (3, i_ct));
+
+            v_mappoints.push_back( Mappoint(triPoints, name, name, vinframeinlier_matches[i_ct]) );
+            vMappoints_indexnum.push_back(i_ct);
         }
+    }
+
+    if(v_mappoints.empty())
+    {
+        cout << "ERROR: No mappoints are generated!" << endl;
+        exit(EXIT_FAILURE);
     }
 }
 
@@ -105,7 +122,7 @@ void Frame::checkframe()
          << "number of right feature:" << vfeaturepoints_r.size() << "\n"
          << "number of inlier matches:" << vinframeinlier_matches.size() << "\n"
          << "number of all matches:" << vinframe_matches.size() << "\n"
-         << "number of triangular points:" << vinframetriangular_points.size() << endl;
+         << "number of mappoints:" << vMappoints_indexnum.size() << endl;
 }
 
 bool Frame::drawframe(cv::Mat image1, cv::Mat image2, int drawing_mode, cv::Mat CamProjMat = cv::Mat())
@@ -141,7 +158,7 @@ bool Frame::drawframe(cv::Mat image1, cv::Mat image2, int drawing_mode, cv::Mat 
         cv::putText(newimage, str.str(), position, cv::FONT_HERSHEY_TRIPLEX, 0.5, cv::Scalar(0, 255, 255), 1);
 
         //-- draw cicles
-        for (int i_ct; i_ct < vinframeinlier_matches.size(); i_ct++){
+        for (int i_ct = 0; i_ct < vinframeinlier_matches.size(); i_ct++){
             cv::line(newimage, vfeaturepoints_l[ vinframeinlier_matches[i_ct].queryIdx ].pt,
                     vfeaturepoints_r[ vinframeinlier_matches[i_ct].trainIdx ].pt, cv::Scalar(0,255,0));
         }
@@ -169,7 +186,7 @@ bool Frame::drawframe(cv::Mat image1, cv::Mat image2, int drawing_mode, cv::Mat 
         cv::putText(newimage, str.str(), position, cv::FONT_HERSHEY_TRIPLEX, 0.5, cv::Scalar(0, 255, 255), 1);
 
         //-- draw cicles
-        for (int i_ct; i_ct < vinframeinlier_matches.size(); i_ct++){
+        for (int i_ct = 0; i_ct < vinframeinlier_matches.size(); i_ct++){
             cv::circle(newimage, vfeaturepoints_l[ vinframeinlier_matches[i_ct].queryIdx ].pt, 4, cv::Scalar(0, 255, 0));
         }
 
@@ -198,9 +215,9 @@ bool Frame::drawframe(cv::Mat image1, cv::Mat image2, int drawing_mode, cv::Mat 
         myWindow.showWidget("Coordinate Widget", cv::viz::WCoordinateSystem());
 
         /// Let's assume camera has the following properties
-        cv::Vec3f cam_pos = cv::Vec3f(CamProjMat.col(3)) * (-0.001),
-                  cam_focal_point = cv::Vec3f(CamProjMat.col(3))*(-0.001) - cv::Vec3f(0.0f,0.0f,1.0f),
-                  cam_y_dir(0.0f,1.0f,0.0f);
+        cv::Vec3f cam_pos = cv::Vec3f(CamProjMat.col(3)) * -(1.0),
+                  cam_focal_point = cv::Vec3f(CamProjMat.col(3))*(-1.0) - cv::Vec3f(0.0f,20.0f,0.0f),
+                  cam_y_dir(0.0f,0.0f,-1.0f);
 
         /// We can get the pose of the cam using makeCameraPose
         cv::Affine3f cam_pose = cv::viz::makeCameraPose(cam_pos, cam_focal_point, cam_y_dir);
@@ -210,21 +227,17 @@ bool Frame::drawframe(cv::Mat image1, cv::Mat image2, int drawing_mode, cv::Mat 
         cv::Affine3f transform = cv::viz::makeTransformToGlobal(cv::Vec3f(1.0f, 0.0f,0.0f), cv::Vec3f(0.0f, 1.0f, 0.0f),cv::Vec3f(0.0f,0.0f, 1.0f), cam_pos);
 
         /// Create a cloud widget.
-        cv::viz::WCloud cloud_widget(vinframetriangular_points, cv::viz::Color::green());
+        std::vector< cv::Point3f > pointcloud;
+        for (int i_ct = 0; i_ct < pframeTomap->cloudMap.size(); i_ct++){
+            pointcloud.push_back( pframeTomap->cloudMap[i_ct].position );
+        }
+        cv::viz::WCloud cloud_widget(pointcloud, cv::viz::Color::green());
 
         /// Pose of the widget in camera frame
-        cv::Affine3f cloud_pose = cv::Affine3f().translate(CamProjMat.col(3));
+        cv::Affine3f temp;
+        cv::Affine3f cloud_pose = temp.translate(CamProjMat.col(3));
         /// Pose of the widget in global frame
         cv::Affine3f cloud_pose_global = transform * cloud_pose;
-
-        /// Visualize camera frame
-        if (!camera_pov)
-        {
-            cv::viz::WCameraPosition cpw(0.5); // Coordinate axes
-            cv::viz::WCameraPosition cpw_frustum(cv::Vec2f(0.889484, 0.523599)); // Camera frustum
-            myWindow.showWidget("CPW", cpw, cam_pose);
-            myWindow.showWidget("CPW_FRUSTUM", cpw_frustum, cam_pose);
-        }
 
         /// Visualize widget
         myWindow.showWidget("features", cloud_widget, cloud_pose_global);
@@ -241,79 +254,3 @@ bool Frame::drawframe(cv::Mat image1, cv::Mat image2, int drawing_mode, cv::Mat 
 
 }
 
-///**************************************
-///**************************************
-/// ***********other function************
-// * @function cvcloud_load
-// * @brief load bunny.ply
-// */
-//static cv::Mat cvcloud_load()
-//{
-//    cv::Mat cloud(1, 1889, CV_32FC3);
-//    ifstream ifs("bunny.ply");
-
-//    std::string str;
-//    for(size_t i = 0; i < 12; ++i)
-//        getline(ifs, str);
-
-//    cv::Point3f* data = cloud.ptr<cv::Point3f>();
-//    float dummy1, dummy2;
-//    for(size_t i = 0; i < 1889; ++i)
-//        ifs >> data[i].x >> data[i].y >> data[i].z >> dummy1 >> dummy2;
-
-//    cloud *= 5.0f;
-//    return cloud;
-//}
-
-/* draw 3D points in camera frame */
-//void draw3Dpoints(cv::Mat cameraPose, std::vector< cv::Point3f > vtriangularpoints)
-//{
-
-//    bool camera_pov = 1;
-
-//    /// Create a window
-//    cv::viz::Viz3d myWindow("Coordinate Frame");
-
-//    /// Add coordinate axes
-//    myWindow.showWidget("Coordinate Widget", viz::WCoordinateSystem());
-
-//    /// Let's assume camera has the following properties
-//    cv::Vec3f cam_pos = cameraPose.col(3),
-//              cam_focal_point = cameraPose.col(3) - cv::Vec3f(0.0f,0.0f,1.0f),
-//              cam_y_dir(0.0f,1.0f,0.0f);
-
-//    /// We can get the pose of the cam using makeCameraPose
-//    cv::Affine3f cam_pose = cv::viz::makeCameraPose(cam_pos, cam_focal_point, cam_y_dir);
-
-//    /// We can get the transformation matrix from camera coordinate system to global using
-//    /// - makeTransformToGlobal. We need the axes of the camera
-//    cv::Affine3f transform = cv::viz::makeTransformToGlobal(Vec3f(1.0f, 0.0f,0.0f), Vec3f(0.0f, 1.0f, 0.0f), Vec3f(0.0f,0.0f, 1.0f), cam_pos);
-
-//    /// Create a cloud widget.
-//    cv::Mat point_cloud = ;
-//    cv::viz::WCloud cloud_widget(point_cloud, cv::viz::Color::green());
-
-//    /// Pose of the widget in camera frame
-//    cv::Affine3f cloud_pose = Affine3f().translate(Vec3f(0.0f,0.0f,3.0f));
-//    /// Pose of the widget in global frame
-//    cv::Affine3f cloud_pose_global = transform * cloud_pose;
-
-//    /// Visualize camera frame
-//    if (!camera_pov)
-//    {
-//        cv::viz::WCameraPosition cpw(0.5); // Coordinate axes
-//        cv::viz::WCameraPosition cpw_frustum(Vec2f(0.889484, 0.523599)); // Camera frustum
-//        myWindow.showWidget("CPW", cpw, cam_pose);
-//        myWindow.showWidget("CPW_FRUSTUM", cpw_frustum, cam_pose);
-//    }
-
-//    /// Visualize widget
-//    myWindow.showWidget("bunny", cloud_widget, cloud_pose_global);
-
-//    /// Set the viewer pose to that of camera
-//    if (camera_pov)
-//        myWindow.setViewerPose(cam_pose);
-
-//    /// Start event loop.
-//    myWindow.spin();
-//}
