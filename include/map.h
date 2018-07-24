@@ -3,6 +3,7 @@
 
 #include <vector>
 
+#include "frame.h"
 #include "mappoint.h"
 
 class Map
@@ -10,11 +11,11 @@ class Map
 public:
     Map();
 
-    Map( std::vector< Mappoint > pointcloud );
-
 public:
 
     std::vector< Mappoint > cloudMap;
+
+    std::vector< Frame > frameMap;
 
 };
 

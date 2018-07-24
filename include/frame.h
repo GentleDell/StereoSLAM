@@ -15,7 +15,6 @@
 #include "opencv2/xfeatures2d.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 
-#include "map.h"
 #include "mappoint.h"
 
 using namespace std;
@@ -33,16 +32,21 @@ enum{
 const int GOOD_PTS_MAX = 300;
 const float GOOD_PORTION = 0.3f;
 
+class Map;
+
 
 /* A frame includes avaliable information and operations of given stereo images.*/
 class Frame
 {
-public:     // functions
+public:
 
     Frame();
 
-    Frame(cv::Mat image1, cv::Mat image2, cv::Mat CamProjMat1, cv::Mat CamProjMat2, Map &cloudmap, bool flag, int num);
+    Frame(cv::Mat image1, cv::Mat image2, cv::Mat projectmat1, cv::Mat projectmat2, int num);
 
+///* INNER FRAME OPERATION
+/// all these functions manipulate stereo image to form a frame
+///
     void match_images(cv::Mat image1, cv::Mat image2);
 
     void find_inliers(void);
@@ -57,22 +61,32 @@ public:     // functions
      * flag : 1, using algrithm mentioned above; 0, using function of OpenCV.
      *        Default value is 1;
      *
-     * Output argument *
+     *
      *
      */
-
-    void reprojectTo3D(cv::Mat CamProjMat1, cv::Mat CamProjMat2, std::vector<Mappoint> &v_mappoints, bool flag);
+    void reprojectTo3D( std::vector<Mappoint> &v_mappoints, bool flag );
 
     /* OUTPUT SAME VARIANCE OF THE CLASS OBJECT TO CHECK IT*/
     void checkframe();
 
-    bool drawframe(cv::Mat image1, cv::Mat image2, int drawing_mode, cv::Mat CamProjMat);
+    bool drawframe(cv::Mat image1, cv::Mat image2, int drawing_mode);
 
     cv::Mat obtainrotation();
     cv::Mat obtaintranslation();
 
 
-public:     // variances
+///* INTER FRAME OPERATION
+/// these functions work on frame level
+///
+    void match_frames( Frame targetframe );
+
+    void find_inliers(std::vector<KeyPoint>& keypoints1, std::vector<KeyPoint>& keypoints2,
+                      std::vector<DMatch>& matches, std::vector<DMatch>& inlier_matches);
+
+    void reprojectInterFrameTo3D(Frame targetframe , std::vector<Mappoint> &v_mappoints );
+
+
+public:
 
     template<class KPMatcher>
     struct SURFMatcher
@@ -103,13 +117,17 @@ public:     // variances
 
     cv::Mat T_w2c;  // pose of this frame
 
-    std::vector< int > vMappoints_indexnum;   // Map points' number in Map
+    cv::Mat CamProjMat_l, CamProjMat_r;     // Camera Project Matrix under camera coordinate of THIS FRAME
+
+    std::vector< int > vMappoints_indexnum;   // Map points' number in global map
+
+    /* Id of inframe triangulated points of left & right images */
+    std::vector< int > vinframematch_queryIdx, vinframematch_trainIdx;
+
+    /* Id of inter frame triangulated points of left & right images */
+    std::vector< int > vinterframematch_queryIdx, vinterframematch_trainIdx;
 
     std::vector< cv::DMatch > vinframe_matches, vinframeinlier_matches;   // matches of the given stereo images
-
-    std::vector< vector< cv::DMatch > > voutframeinlier_matches;    // matches between this frame and other frames
-
-    vector< int > voutframematches_number; // number of matched frames
 
     std::vector< cv::KeyPoint > vfeaturepoints_l, vfeaturepoints_r;     // featurepoints of left and right image
 

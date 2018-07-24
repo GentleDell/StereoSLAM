@@ -166,7 +166,7 @@ int main()
     char * paramPathleft = "/home/zhant/Documents/camera2_left.yml";
     char * paramPathright = "/home/zhant/Documents/camera1_right.yml";
 
-    Map pointcloudMap;
+    Map globalMap;  // Globle point cloud Map
 
     cout << "Built with OpenCV " << CV_VERSION << endl;
 
@@ -197,13 +197,12 @@ int main()
                 left_image = calibrate_img(left_image, camera_Mat_left, distCoeffs_left);
                 right_image = calibrate_img(right_image, camera_Mat_right, distCoeffs_right);
 
-                Frame newframe = Frame(left_image, right_image,
-                                       camera_Mat_left, camera_Mat_right,
-                                       pointcloudMap, bUsemytriangular, imgfile_ct);
+                Frame newframe = Frame(left_image, right_image, camera_Mat_left, camera_Mat_right, imgfile_ct);
 
-//                newframe.checkframe();
+                newframe.reprojectTo3D(globalMap.cloudMap, bUsemytriangular);
 
-                newframe.drawframe(left_image, right_image, DRAW_3D_POINT, camera_Mat_right);
+                newframe.drawframe(left_image, right_image, DRAW_3D_POINT);
+
 
                 char key = (char)waitKey(5);
                 if (key == 's'){
@@ -239,13 +238,12 @@ int main()
                 return EXIT_FAILURE;
             }
 
-            Frame newframe = Frame(left_image, right_image,
-                                   Pl, Pr, pointcloudMap,
-                                   bUsemytriangular, imgfile_ct);
+            Frame newframe = Frame(left_image, right_image, Pl, Pr, imgfile_ct);    // initialize frame 2D information
+            newframe.reprojectTo3D(globalMap.cloudMap, bUsemytriangular);   // initialize 3D information
+            newframe.pframeTomap = &globalMap;      // record global map in the frame
+            globalMap.frameMap.push_back(newframe); // record frame in the global map
 
-//            newframe.checkframe();
-
-            newframe.drawframe(left_image, right_image, DRAW_3D_POINT, Pr);
+            newframe.drawframe(left_image, right_image, DRAW_POINT_ONE);
 
             imgfile_ct++;
         }
@@ -263,8 +261,3 @@ int main()
 
 //    return EXIT_SUCCESS;
 //}
-
-
-//// calibrated images
-// left_image = calibrate_img(left_image, camera_Mat_left, distCoeffs_left);
-// right_image = calibrate_img(right_image, camera_Mat_right, distCoeffs_right);
