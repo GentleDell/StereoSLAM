@@ -37,8 +37,8 @@ enum
     PNP                 = 1,
     BPNP                = 2,
     ICP                 = 3,
-    MICP                = 4,
-    DEE                 = 5,
+    MICP                = 4,    // not finished yet
+    DEE                 = 5,    // not finished yet
 };
 
 const int GOOD_PTS_MAX = 300;

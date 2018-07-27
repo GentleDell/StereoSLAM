@@ -2,6 +2,7 @@
 #define MAP_H
 
 #include <vector>
+#include <sstream>
 
 #include <opencv2/viz/vizcore.hpp>
 

@@ -6,6 +6,8 @@ Map::Map(){
 
 void Map::draw_Map()
 {
+    stringstream ss;
+
     viz::Viz3d myWindow("Global Map");
 
     // Add coordinate axes
@@ -24,6 +26,22 @@ void Map::draw_Map()
         Affine3f pose(frameMap[i_ct].T_w2c);
 
         myWindow.setWidgetPose("Cube Widget", pose);
+
+        std::vector< cv::Point3f > pointcloud;
+        for (int j_ct = 0; j_ct < cloudMap.size(); j_ct++){
+            if(cloudMap[j_ct].v_visibleframes_query[0] == i_ct)
+            {
+                pointcloud.push_back( cloudMap[j_ct].position );
+            }
+        }
+        cv::viz::WCloud cloud_widget(pointcloud, cv::viz::Color::green());
+
+        // Visualize widget
+        ss.clear();
+        ss.str("");
+        ss << "features " << i_ct;
+
+        myWindow.showWidget(ss.str(), cloud_widget, frameMap[i_ct].T_w2c);
 
         myWindow.spinOnce(500, true);
     }

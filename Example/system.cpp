@@ -251,7 +251,7 @@ int main()
             if (imgfile_ct >= 1){
                 globalMap.frameMap[imgfile_ct -1].match_frames(globalMap.frameMap[imgfile_ct]);
 
-                if (imgfile_ct%20 == 0)
+                if (imgfile_ct%200 == 0)
                 {
                     globalMap.draw_Map();
                 }
