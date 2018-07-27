@@ -6,15 +6,17 @@
 #include <iostream>
 #include <sstream>
 
-#include <opencv2/viz.hpp>
 #include "opencv2/core.hpp"
 #include "opencv2/calib3d.hpp"
 #include "opencv2/highgui.hpp"
 #include <opencv2/opencv.hpp>
 #include "opencv2/features2d.hpp"
-#include "opencv2/xfeatures2d.hpp"
+#include <opencv2/viz/vizcore.hpp>      // need vtk
+#include "opencv2/xfeatures2d.hpp"      // Opencv_contrib
 #include "opencv2/imgproc/imgproc.hpp"
+#include "opencv2/surface_matching.hpp" // Opencv_contrib
 
+#include "usrmath.h"
 #include "mappoint.h"
 
 using namespace std;
@@ -27,6 +29,16 @@ enum{
     DRAW_POINT_ONE      = 3,
 
     DRAW_3D_POINT       = 4
+};
+
+enum
+{
+    /* ALGORITHM FOR POSE ESTIMATION */
+    PNP                 = 1,
+    BPNP                = 2,
+    ICP                 = 3,
+    MICP                = 4,
+    DEE                 = 5,
 };
 
 const int GOOD_PTS_MAX = 300;
@@ -78,7 +90,9 @@ public:
 ///* INTER FRAME OPERATION
 /// these functions work on frame level
 ///
-    void match_frames( Frame targetframe );
+    void match_frames(Frame &targetframe );
+
+    void estimate_pose(std::vector< cv::DMatch > vinterframe_matchesinlier, Frame &targetframe , int algo);
 
     void find_inliers(std::vector<KeyPoint>& keypoints1, std::vector<KeyPoint>& keypoints2,
                       std::vector<DMatch>& matches, std::vector<DMatch>& inlier_matches);
@@ -115,14 +129,14 @@ public:
 
     int name;
 
-    cv::Mat T_w2c;  // pose of this frame
+    cv::Matx44d T_w2c;  // pose of this frame
 
     cv::Mat CamProjMat_l, CamProjMat_r;     // Camera Project Matrix under camera coordinate of THIS FRAME
 
     std::vector< int > vMappoints_indexnum;   // Map points' number in global map
 
     /* Id of inframe triangulated points of left & right images */
-    std::vector< int > vinframematch_queryIdx, vinframematch_trainIdx;
+    std::vector< int > vinframeinliermatches_queryIdx, vinframeinliermatches_trainIdx;
 
     /* Id of inter frame triangulated points of left & right images */
     std::vector< int > vinterframematch_queryIdx, vinterframematch_trainIdx;

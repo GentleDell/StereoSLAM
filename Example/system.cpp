@@ -186,8 +186,9 @@ int main()
         capture_right.open("/dev/rightcam");
         if(capture_left.isOpened() && capture_right.isOpened()) {
             cout << "Both are opened" << endl;
-            int imgfile_ct = 0;
-            for(;;){
+
+            for(int imgfile_ct = 0; ; imgfile_ct++)
+            {
                 capture_left >> left_image;
                 capture_right >> right_image;
 
@@ -231,21 +232,31 @@ int main()
         }
         cout << Pl << "\n" << Pr << endl;
 
-        int imgfile_ct = 0;
-        for(;;){
-
-            if(!load_image(left_image, right_image, filepath, imgfile_ct)){
+        for(int imgfile_ct = 0; ; imgfile_ct ++)
+        {
+            if(!load_image(left_image, right_image, filepath, imgfile_ct))
+            {
                 return EXIT_FAILURE;
             }
+
+            cout << "image pair:" << imgfile_ct << endl;
 
             Frame newframe = Frame(left_image, right_image, Pl, Pr, imgfile_ct);    // initialize frame 2D information
             newframe.reprojectTo3D(globalMap.cloudMap, bUsemytriangular);   // initialize 3D information
             newframe.pframeTomap = &globalMap;      // record global map in the frame
             globalMap.frameMap.push_back(newframe); // record frame in the global map
 
-            newframe.drawframe(left_image, right_image, DRAW_POINT_ONE);
+//            newframe.drawframe(left_image, right_image, DRAW_POINT_ONE);
 
-            imgfile_ct++;
+            if (imgfile_ct >= 1){
+                globalMap.frameMap[imgfile_ct -1].match_frames(globalMap.frameMap[imgfile_ct]);
+
+                if (imgfile_ct%20 == 0)
+                {
+                    globalMap.draw_Map();
+                }
+            }
+
         }
     }
     return EXIT_SUCCESS;

@@ -3,22 +3,22 @@
 
 using namespace std;
 
-const int EMPTYFRAME = -1;
+const int EMPTY = -1;
 
 // basic constructor
 Frame::Frame()
 {
-    name = EMPTYFRAME;
+    name = EMPTY;
 }
 
 // constructor generating necessary data
 Frame::Frame(cv::Mat image1, cv::Mat image2, cv::Mat projectmat1, cv::Mat projectmat2, int num)
 {
     name = num;
+    T_w2c = Matx44d::eye();
     pframeTomap = NULL;
     CamProjMat_l = projectmat1;
     CamProjMat_r = projectmat2;
-    cv::hconcat(cv::Mat::eye(3,3, CV_32F), cv::Mat::zeros(3, 1, CV_32F), T_w2c);
 
     match_images(image1, image2);
 //    reprojectTo3D(CamProjMat1, CamProjMat2, flag);
@@ -64,8 +64,8 @@ void Frame::find_inliers(void)
             vfeaturepoints_l[ good_matches[i].queryIdx ].pt = newsrc_featpoint[i];
             vfeaturepoints_r[ good_matches[i].trainIdx ].pt = newdst_featpoint[i];
 
-            vinframematch_queryIdx.push_back( good_matches[i].queryIdx );
-            vinframematch_trainIdx.push_back( good_matches[i].trainIdx );
+            vinframeinliermatches_queryIdx.push_back( good_matches[i].queryIdx );
+            vinframeinliermatches_trainIdx.push_back( good_matches[i].trainIdx );
         }
     }
 }
@@ -98,8 +98,8 @@ void Frame::reprojectTo3D(std::vector< Mappoint > &v_mappoints, bool flag = 0)
     }
     else{
         for (int i_ct = 0; i_ct < vinframeinlier_matches.size(); i_ct++ ){
-            vpoints1.push_back( vfeaturepoints_l[ vinframematch_queryIdx[i_ct] ].pt );
-            vpoints2.push_back( vfeaturepoints_r[ vinframematch_trainIdx[i_ct] ].pt );
+            vpoints1.push_back( vfeaturepoints_l[ vinframeinliermatches_queryIdx[i_ct] ].pt );
+            vpoints2.push_back( vfeaturepoints_r[ vinframeinliermatches_trainIdx[i_ct] ].pt );
         }
 
         cv::triangulatePoints(CamProjMat_l, CamProjMat_r, vpoints1, vpoints2, point4D);
@@ -108,13 +108,13 @@ void Frame::reprojectTo3D(std::vector< Mappoint > &v_mappoints, bool flag = 0)
          * It might be better to save the point cloud in 4d and do not normalize */
 
         int maplength = v_mappoints.size();
-        for(int i_ct = maplength; i_ct < maplength+point4D.cols; i_ct++){
+        for(int i_ct = 0; i_ct < point4D.cols; i_ct++){
             triPoints = cv::Point3f(point4D.at<float> (0, i_ct) / point4D.at<float> (3, i_ct),
                                     point4D.at<float> (1, i_ct) / point4D.at<float> (3, i_ct),
                                     point4D.at<float> (2, i_ct) / point4D.at<float> (3, i_ct));
 
             v_mappoints.push_back( Mappoint(triPoints, name, name, vinframeinlier_matches[i_ct]) );
-            vMappoints_indexnum.push_back(i_ct);
+            vMappoints_indexnum.push_back(i_ct + maplength);
         }
     }
 
@@ -168,8 +168,8 @@ bool Frame::drawframe(cv::Mat image1, cv::Mat image2, int drawing_mode)
 
         //-- draw cicles
         for (int i_ct = 0; i_ct < vinframeinlier_matches.size(); i_ct++){
-            cv::line(newimage, vfeaturepoints_l[ vinframematch_queryIdx[i_ct] ].pt,
-                    vfeaturepoints_r[ vinframematch_trainIdx[i_ct] ].pt, cv::Scalar(0,255,0));
+            cv::line(newimage, vfeaturepoints_l[ vinframeinliermatches_queryIdx[i_ct] ].pt,
+                    vfeaturepoints_r[ vinframeinliermatches_trainIdx[i_ct] ].pt, cv::Scalar(0,255,0));
         }
 
         cv::namedWindow("Matching result", cv::WINDOW_NORMAL);
@@ -196,7 +196,7 @@ bool Frame::drawframe(cv::Mat image1, cv::Mat image2, int drawing_mode)
 
         //-- draw cicles
         for (int i_ct = 0; i_ct < vinframeinlier_matches.size(); i_ct++){
-            cv::circle(newimage, vfeaturepoints_l[ vinframematch_queryIdx[i_ct] ].pt, 4, cv::Scalar(0, 255, 0));
+            cv::circle(newimage, vfeaturepoints_l[ vinframeinliermatches_queryIdx[i_ct] ].pt, 4, cv::Scalar(0, 255, 0));
         }
 
         cv::namedWindow("Matching result", cv::WINDOW_NORMAL);
@@ -299,7 +299,195 @@ void Frame::find_inliers(std::vector<KeyPoint>& keypoints1, std::vector<KeyPoint
     }
 }
 
-void Frame::match_frames( Frame targetframe )
+struct Match_3D_corresp
+{
+    Match_3D_corresp() {}
+
+    cv::DMatch match;
+
+    int index_3D_frame1;    // the index of 3D point of frame1
+
+    int index_3D_frame2;    // the index of 3D point of frame2
+};
+
+/* DIVID INLIERS INTO 3 GROUPS & ESTIMATE POSE:
+ *   vmatches_bothnew: Matches in this group are tatolly new. After estmating R&t of target frame,
+ * all matches in this group will be triangulate to 3D map point could.
+ *
+ *   vmatches_1stnew & vmatches_2ndnew: in this group, all these matches have a new feature point
+ * that has not been triangulated yet. The other point of the matches has been mapped. As aresult,
+ * we can us PnP on matches of this group to estimate R&t.
+ *
+ *   vmatches_nonew: Points forming these matches have already been triangulated. Therefore, we are
+ * able conduct ICP algorithm on matches of this group to estimate R&t.
+ *
+ * In fact, fusing all these estimation should be better, but in the present, we aim to accomplish
+ * the whole system. we would like to accompish fusion and optimization later.
+ * */
+ void Frame::estimate_pose( std::vector< cv::DMatch > vinterframe_matchesinlier, Frame &targetframe, int algo )
+{
+    int distance;
+    Match_3D_corresp temp;
+    std::vector< Match_3D_corresp > vcorresp_bothnew, vcorresp_1stnew, vcorresp_2ndnew, vcorresp_nonew;
+
+/// GROUPING POINT CLOUD
+    for (int i_ct = 0; i_ct < vinterframe_matchesinlier.size(); i_ct++)
+    {
+        vector< int >::iterator this_result = find(vinframeinliermatches_queryIdx.begin(),
+                                                   vinframeinliermatches_queryIdx.end(),
+                                                   vinterframe_matchesinlier[i_ct].queryIdx);
+
+        vector< int >::iterator target_result = find(targetframe.vinframeinliermatches_queryIdx.begin(),
+                                                     targetframe.vinframeinliermatches_queryIdx.end(),
+                                                     vinterframe_matchesinlier[i_ct].trainIdx);
+
+        temp.match = vinterframe_matchesinlier[i_ct];
+        temp.index_3D_frame1 = EMPTY;
+        temp.index_3D_frame2 = EMPTY;
+
+        // a "new" interframe matches in both frames
+        if( (this_result == vinframeinliermatches_queryIdx.end())
+                && (target_result == targetframe.vinframeinliermatches_queryIdx.end()) )
+        {
+            vcorresp_bothnew.push_back( temp );
+        }
+        // the target-frame point has matched with a point in right image of target frame
+        else if( (this_result == vinframeinliermatches_queryIdx.end())
+                && (target_result != targetframe.vinframeinliermatches_queryIdx.end()) )
+        {
+            distance = std::distance(targetframe.vinframeinliermatches_queryIdx.begin(), target_result);
+            temp.index_3D_frame2 = targetframe.vMappoints_indexnum[distance];
+
+            vcorresp_1stnew.push_back( temp );
+        }
+        // a "new" interframe matches only in target frames
+        else if( (this_result != vinframeinliermatches_queryIdx.end())
+                 && (target_result == targetframe.vinframeinliermatches_queryIdx.end()) )
+        {
+            distance = std::distance(vinframeinliermatches_queryIdx.begin(), this_result);
+            temp.index_3D_frame1 = vMappoints_indexnum[distance];
+
+            vcorresp_2ndnew.push_back( temp );
+        }
+        // both point of the match has matched with other point in corresponding frame
+        else
+        {
+            distance = std::distance(vinframeinliermatches_queryIdx.begin(), this_result);
+            temp.index_3D_frame1 = vMappoints_indexnum[distance];
+
+            distance = std::distance(targetframe.vinframeinliermatches_queryIdx.begin(), target_result);
+            temp.index_3D_frame2 = targetframe.vMappoints_indexnum[distance];
+
+            vcorresp_nonew.push_back( temp );
+        }
+    }
+
+//    cout << "both new points:" << vcorresp_bothnew.size() << "\n"
+//         << "1st new points:" << vcorresp_1stnew.size() << "\n"
+//         << "2nd new points:" << vcorresp_2ndnew.size() << "\n"
+//         << "no new points:" << vcorresp_nonew.size() << "\n"
+//         << "sum of all matches:" << vinterframe_matchesinlier.size() << endl;
+
+
+/// POSE ESTIMATION IS AT BELOW
+///
+    cv::Matx44d pose;
+    Usrmath usr_operator;
+
+    /* Standard ICP 3D-3D */
+    if( algo == ICP )
+    {
+        int num_points = vcorresp_nonew.size();
+        cv::Mat srcPointCloud(num_points, 3, CV_32F),
+                dstPointCloud(num_points, 3, CV_32F);
+
+        for (int i_ct = 0; i_ct < num_points; i_ct++)
+        {
+            float *row_src = srcPointCloud.ptr<float>(i_ct);
+
+            row_src[0] = pframeTomap->cloudMap[vcorresp_nonew[i_ct].index_3D_frame1].position.x;
+            row_src[1] = pframeTomap->cloudMap[vcorresp_nonew[i_ct].index_3D_frame1].position.y;
+            row_src[2] = pframeTomap->cloudMap[vcorresp_nonew[i_ct].index_3D_frame1].position.z;
+
+            float *row_dst = dstPointCloud.ptr<float>(i_ct);
+
+            row_dst[0] = targetframe.pframeTomap->cloudMap[vcorresp_nonew[i_ct].index_3D_frame2].position.x;
+            row_dst[1] = targetframe.pframeTomap->cloudMap[vcorresp_nonew[i_ct].index_3D_frame2].position.y;
+            row_dst[2] = targetframe.pframeTomap->cloudMap[vcorresp_nonew[i_ct].index_3D_frame2].position.z;
+        }
+
+        pose = usr_operator.standard_ICP(srcPointCloud, dstPointCloud, targetframe.T_w2c);
+
+        cout << pose << endl;
+    }
+
+    //** Matched ICP 3D-3D
+    else if(algo == MICP)
+    {
+
+    }
+
+    //** Forward PnP 2D-3D
+    else if(algo == PNP)
+    {
+        std::vector< cv::Point3f > Pointcloud;
+        std::vector< cv::Point2f > imagePoints;
+        cv::Mat pnp_mask, cameraMatrix = CamProjMat_l(Range(0,3), Range(0,3));
+
+        for (int i_ct = 0; i_ct < vcorresp_1stnew.size(); i_ct++)
+        {
+            Pointcloud.push_back( pframeTomap->cloudMap[ vcorresp_1stnew[i_ct].index_3D_frame2 ].position );
+            imagePoints.push_back( vfeaturepoints_l[ vcorresp_1stnew[i_ct].match.queryIdx ].pt );
+        }
+
+        /* since we do not plan to optimize locations of camera and point cloud temporarily,
+         * we shall not use pnp_mask. Nevertheless, we output it for any possible further use.
+         */
+        pose = usr_operator.standard_PnP(Pointcloud, imagePoints, cameraMatrix, pnp_mask);
+    }
+
+    //** Backward PnP 2D-3D
+    else if(algo == BPNP)
+    {
+        std::vector< cv::Point3f > Pointcloud;
+        std::vector< cv::Point2f > imagePoints;
+        cv::Mat pnp_mask, cameraMatrix = CamProjMat_l(Range(0,3), Range(0,3));
+
+        for (int i_ct = 0; i_ct < vcorresp_2ndnew.size(); i_ct++)
+        {
+            Pointcloud.push_back( pframeTomap->cloudMap[ vcorresp_2ndnew[i_ct].index_3D_frame1 ].position );
+            imagePoints.push_back( targetframe.vfeaturepoints_l[ vcorresp_2ndnew[i_ct].match.trainIdx ].pt );
+        }
+
+        /* since we do not plan to optimize locations of camera and point cloud temporarily,
+         * we shall not use pnp_mask. Nevertheless, we output it for any possible further use.
+         */
+        pose = usr_operator.standard_PnP(Pointcloud, imagePoints, cameraMatrix, pnp_mask);
+
+        pose = pose.inv();
+    }
+
+    //** Decompose essential matrix 2D-2D
+    else if(algo == DEE)
+    {
+
+    }
+
+
+    if(!pose(0,0))
+    {
+        cout << "Error:" << "\n"
+             << "Fail to estimate pose. \n"
+             << "System is LOST in Frame:"  << targetframe.name << endl;
+        exit(EXIT_FAILURE);
+    }
+    else
+    {
+        targetframe.T_w2c = pose * T_w2c; // wrong
+    }
+}
+
+void Frame::match_frames( Frame &targetframe )
 {
     std::vector< cv::DMatch > vinterframe_matches, vinterframe_matchesinlier;
     SURFMatcher<cv::BFMatcher> matcher;
@@ -308,60 +496,9 @@ void Frame::match_frames( Frame targetframe )
 
     find_inliers(vfeaturepoints_l, targetframe.vfeaturepoints_l, vinterframe_matches, vinterframe_matchesinlier);
 
-    /* DIVID INLIERS INTO TWO GROUPS:
-     *   vmatches_tobeOpt: Matches in this group have already been reprojected to 3D map points. Since
-     * there are new matches now, these 3D points can be optimized and their corresponding feature points
-     * can be refined. However, there is no plan to add the optimization part now. We may add it in the
-     * future.
-     *
-     *   vmatches_tobeProj: Matches in this group will be project to 3D map points*/
-    std::vector< cv::DMatch > vmatches_bothnew, vmatches_1stnew, vmatches_2ndnew, vmatches_notnew;
-
-    for (int i_ct = 0; i_ct < vinterframe_matchesinlier.size(); i_ct++){
-        vector< int >::iterator this_result = find(vinframematch_queryIdx.begin(),
-                                              vinframematch_queryIdx.end(),
-                                              vinterframe_matchesinlier[i_ct].queryIdx);
-        // a "new" inter frame matches in this frame
-        if(this_result == vinframematch_queryIdx.end())
-        {
-            for (int i_ct = 0; i_ct < vinterframe_matchesinlier.size(); i_ct++){
-                vector< int >::iterator target_result = find(targetframe.vinframematch_queryIdx.begin(),
-                                                      targetframe.vinframematch_queryIdx.end(),
-                                                      vinterframe_matchesinlier[i_ct].trainIdx);
-                // a "new" interframe matches in both frames
-                if (target_result == targetframe.vinframematch_queryIdx.end())
-                {
-
-                }
-                // the target-frame point has matched with a point in right image of target frame
-                else
-                {
-
-                }
-            }
-        }
-        // the this-frame point has matched with a point in right image  of this frame
-        else{
-            for (int i_ct = 0; i_ct < vinterframe_matchesinlier.size(); i_ct++){
-                vector< int >::iterator target_result = find(targetframe.vinframematch_queryIdx.begin(),
-                                                      targetframe.vinframematch_queryIdx.end(),
-                                                      vinterframe_matchesinlier[i_ct].trainIdx);
-                // a "new" interframe matches only in target frames
-                if (target_result == targetframe.vinframematch_queryIdx.end())
-                {
-
-                }
-                // both point of the match has matched with other point in corresponding frame
-                else
-                {
-
-                }
-            }
-        }
-    }
+    estimate_pose( vinterframe_matchesinlier, targetframe, PNP );
 }
 
 void Frame::reprojectInterFrameTo3D( Frame targetframe , std::vector<Mappoint> &v_mappoints )
 {
-
 }
