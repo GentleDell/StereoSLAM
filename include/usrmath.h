@@ -20,8 +20,8 @@ public:
 
     cv::Matx44d standard_ICP(cv::Mat srcPC, cv::Mat dstPC, cv::Matx44d initialpose);
 
-    cv::Matx44d standard_PnP(std::vector< cv::Point3f > Pointcloud,
-                             std::vector< cv::Point2f > imagePoints,
+    cv::Matx44d standard_PnP(std::vector< cv::Point3f > vPointcloud,
+                             std::vector< cv::Point2f > vimagePoints,
                              cv::Mat cameraMatrix, cv::Mat &pnpmask);
 
     cv::Mat decompose_essenMat();

@@ -30,25 +30,35 @@ cv::Matx44d Usrmath::standard_ICP(cv::Mat srcPC, cv::Mat dstPC, cv::Matx44d pose
     return v_p_pose3D[0]->pose;
 }
 
-cv::Matx44d Usrmath::standard_PnP(std::vector< cv::Point3f > Pointcloud,
-                                  std::vector< cv::Point2f > imagePoints,
+cv::Matx44d Usrmath::standard_PnP(std::vector< cv::Point3f > vPointcloud,
+                                  std::vector< cv::Point2f > vimagePoints,
                                   cv::Mat cameraMatrix, cv::Mat &pnpmask)
 {
     bool pnpflag;
     cv::Mat rotation, translation, rotMat;
 
-    pnpflag = cv::solvePnPRansac( Pointcloud, imagePoints, cameraMatrix, cv::Mat(),
-                                  rotation, translation, false, 100, 8.0, 0.99, pnpmask, cv::SOLVEPNP_ITERATIVE);
+    if(vPointcloud.size() < 4)
+    {
+        cout << "ERROR:\n"
+             << "No enough 2D-3D matches for PnP solver!\n"
+             << "Now please try BPnP." << endl;
 
-    cv::Rodrigues(rotation, rotMat);
+        return cv::Matx44d::zeros();
+    }
+    else
+    {
+        pnpflag = cv::solvePnPRansac( vPointcloud, vimagePoints, cameraMatrix, cv::Mat(),
+                                      rotation, translation, false, 100, 8.0, 0.99, pnpmask, cv::SOLVEPNP_ITERATIVE);
 
-    cv::Mat temp_h, temp_v;
-    cv::Mat lastline = (cv::Mat_<double>(1, 4) << 0, 0, 0, 1);
-    cv::hconcat(rotMat, translation, temp_h);
-    cv::vconcat(temp_h, lastline, temp_v);
+        cv::Rodrigues(rotation, rotMat);
 
-    return cv::Matx44d(temp_v);
+        cv::Mat temp_h, temp_v;
+        cv::Mat lastline = (cv::Mat_<double>(1, 4) << 0, 0, 0, 1);
+        cv::hconcat(rotMat, translation, temp_h);
+        cv::vconcat(temp_h, lastline, temp_v);
 
+        return cv::Matx44d(temp_v);
+    }
 }
 
 cv::Mat Usrmath::decompose_essenMat()

@@ -34,32 +34,66 @@ void Frame::find_inliers(void)
     std::vector< cv::Point2f > vfeature_coordinate_l,vfeature_coordinate_r;
     cv::Mat flag_inliermatches;
 
-    //-- Sort matches and preserve top 30% matches
+    /* Sort matches and preserve top GOOD_PORTION% of filted matches.
+     * Filting matches here is better, since enough points are provided
+     * for triangulation and interframe matching */
+    int matches_ct = 0;
+    int max_ct = vinframe_matches.size();
     std::sort( vinframe_matches.begin(), vinframe_matches.end());  // in DMatch, "<" is defined to compare distance
     const int ptsPairs = std::min(GOOD_PTS_MAX, (int)(vinframe_matches.size() * GOOD_PORTION));  // ptsPairs <= GOOD_PTS_MAX
-    for( int i = 0; i < ptsPairs; i++ )
+    for( int i = 0; i < ptsPairs && matches_ct < max_ct ; i++ )
     {
-        good_matches.push_back( vinframe_matches[i] );
-    }
+       good_matches.push_back( vinframe_matches[matches_ct] );
+       matches_ct++;
 
-    //-- obtain coordinates of feature points
-    for( size_t i = 0; i < good_matches.size(); i++ )
-   {
        vfeature_coordinate_l.push_back( vfeaturepoints_l[ good_matches[i].queryIdx ].pt );
        vfeature_coordinate_r.push_back( vfeaturepoints_r[ good_matches[i].trainIdx ].pt );
-   }
+
+       /* Discard points behind the camera */
+       if(vfeature_coordinate_l[i].x <= vfeature_coordinate_r[i].x)
+       {
+           good_matches.pop_back();
+           vfeature_coordinate_l.pop_back();
+           vfeature_coordinate_r.pop_back();
+           i--;
+           continue;
+       }
+
+       /* If camera is vertically rectified, points with too much slip will be discarded */
+       if( VERTICAL_REC && (abs(vfeature_coordinate_l[i].y - vfeature_coordinate_r[i].y) > MAX_VERTICAL_DISPARITY) )
+       {
+           good_matches.pop_back();
+           vfeature_coordinate_l.pop_back();
+           vfeature_coordinate_r.pop_back();
+           i--;
+           continue;
+       }
+
+       /* Discard distant points to reduce effects of error */
+       if ( (vfeature_coordinate_l[i].x - vfeature_coordinate_r[i].x)*(vfeature_coordinate_l[i].x - vfeature_coordinate_r[i].x) +
+            (vfeature_coordinate_l[i].y - vfeature_coordinate_r[i].y)*(vfeature_coordinate_l[i].y - vfeature_coordinate_r[i].y)
+             < MIN_DISPARITY*MIN_DISPARITY )
+       {
+           good_matches.pop_back();
+           vfeature_coordinate_l.pop_back();
+           vfeature_coordinate_r.pop_back();
+           i--;
+           continue;
+       }
+    }
 
     //-- estimate the fundamental matrix and refine positions of feature points
     /* After estimating the fundamental matrix, it would be better to conduct a guided search. */
     std::vector< cv::Point2f > newsrc_featpoint, newdst_featpoint;
 
-    Frame::fundamentalMat = cv::findFundamentalMat(vfeature_coordinate_l, vfeature_coordinate_r, flag_inliermatches, cv::FM_RANSAC, 2, 0.99);
+    fundamentalMat = cv::findFundamentalMat(vfeature_coordinate_l, vfeature_coordinate_r, flag_inliermatches, cv::FM_RANSAC, 2, 0.99);
 
     cv::correctMatches(fundamentalMat, vfeature_coordinate_l, vfeature_coordinate_r, newsrc_featpoint, newdst_featpoint);
 
     //-- save inlier matches and refined features' coordinate
     for (size_t i = 0; i < good_matches.size(); i++){
-        if (flag_inliermatches.at<int>(1,i)){
+        if (flag_inliermatches.at<int>(1,i))
+        {
             vinframeinlier_matches.push_back(good_matches[i]);
             vfeaturepoints_l[ good_matches[i].queryIdx ].pt = newsrc_featpoint[i];
             vfeaturepoints_r[ good_matches[i].trainIdx ].pt = newdst_featpoint[i];
@@ -270,7 +304,7 @@ void Frame::find_inliers(std::vector<KeyPoint>& keypoints1, std::vector<KeyPoint
 {
     std::vector< DMatch > good_matches;
     std::vector<Point2f> src_featpoint, dst_featpoint;
-    cv::Mat essencialMat, flag_inliermatches;
+    cv::Mat tempMat, flag_inliermatches;
 
     //-- Sort matches and preserve top 30% matches
     std::sort(matches.begin(), matches.end());  // in DMatch, "<" is defined to compare distance
@@ -287,9 +321,11 @@ void Frame::find_inliers(std::vector<KeyPoint>& keypoints1, std::vector<KeyPoint
        dst_featpoint.push_back( keypoints2[ good_matches[i].trainIdx ].pt );
    }
 
-    //-- estimate the fundamental matrix and refine positions of feature points
-    essencialMat = findEssentialMat( src_featpoint, dst_featpoint, CamProjMat_l(Range(0,3), Range(0,3)),
-                                     RANSAC, 0.999, 1.0, flag_inliermatches);
+//    tempMat = findEssentialMat( src_featpoint, dst_featpoint, CamProjMat_l(Range(0,3), Range(0,3)),
+//                                     RANSAC, 0.999, 1.0, flag_inliermatches);
+
+    tempMat = cv::findFundamentalMat(src_featpoint, dst_featpoint, flag_inliermatches, cv::FM_RANSAC, 2, 0.99);
+
 
     /* After estimating fundamatal matrix, it would be better to conduct a guided search for matches */
     for (size_t i = 0; i < good_matches.size(); i++){
@@ -299,6 +335,7 @@ void Frame::find_inliers(std::vector<KeyPoint>& keypoints1, std::vector<KeyPoint
     }
 }
 
+/* structure to record matches and corresponding 3D points */
 struct Match_3D_corresp
 {
     Match_3D_corresp() {}
@@ -390,11 +427,36 @@ struct Match_3D_corresp
 
 
 /// POSE ESTIMATION IS AT BELOW
+/// preprocessing
+
+    // when PNP is chosen, once points less than 4, BPNP would be used
+    if ( vcorresp_1stnew.size() < 4 && algo == PNP )
+    {
+        cout << "PNP is chosen" << endl;
+        algo = BPNP;
+    }
+    // when BPNP is chosen, once points less than 4
+    if ( vcorresp_2ndnew.size() < 4 && algo == BPNP )
+    {
+        if (vcorresp_1stnew.size() < 4)
+        {
+            cout << "MICP is chosen" << endl;
+            algo = MICP;
+        }
+        else
+        {
+            cout << "PNP is chosen" << endl;
+            algo = PNP;
+        }
+    }
+
+/// estiamting pose
 ///
     cv::Matx44d pose;
     Usrmath usr_operator;
 
-    /* Standard ICP 3D-3D */
+    /* Standard ICP 3D-3D
+     * Unstable with sparse point cloud even with a not bad initial pose. */
     if( algo == ICP )
     {
         int num_points = vcorresp_nonew.size();
@@ -417,17 +479,16 @@ struct Match_3D_corresp
         }
 
         pose = usr_operator.standard_ICP(srcPointCloud, dstPointCloud, targetframe.T_w2c);
-
-        cout << pose << endl;
     }
 
-    //** Matched ICP 3D-3D
+    /* Matched ICP 3D-3D */
     else if(algo == MICP)
     {
 
     }
 
-    //** Forward PnP 2D-3D
+    /* Forward PnP 2D-3D
+     * Not stable enough when there are a few points, mismatch is the main reason. */
     else if(algo == PNP)
     {
         std::vector< cv::Point3f > Pointcloud;
@@ -446,7 +507,8 @@ struct Match_3D_corresp
         pose = usr_operator.standard_PnP(Pointcloud, imagePoints, cameraMatrix, pnp_mask);
     }
 
-    //** Backward PnP 2D-3D
+    /* Backward PnP 2D-3D
+     * Not stable enough when there are a few points, mismatch is the main reason. */
     else if(algo == BPNP)
     {
         std::vector< cv::Point3f > Pointcloud;
@@ -467,18 +529,31 @@ struct Match_3D_corresp
         pose = pose.inv();
     }
 
-    //** Decompose essential matrix 2D-2D
+    /* Decompose essential matrix 2D-2D */
     else if(algo == DEE)
     {
 
     }
 
 
-    if(!pose(0,0))
+/// CHECK ESTIMATION OF POSE
+    if( pose(0,0) == 0 )
     {
         cout << "Error:" << "\n"
              << "Fail to estimate pose. \n"
              << "System is LOST in Frame:"  << targetframe.name << endl;
+        exit(EXIT_FAILURE);
+    }
+
+    /* There must be some mistakes when translation is larger than 2, since the system is
+     * installed in a car or it is held by human, with a refreashing frequency of 25Hz */
+    else if( abs(pose(2, 3)) > 2 )
+    {
+        cout << "Error:" << "\n"
+             << "Estimation of pose is unreliable. \n"
+             << "System is Down in Frame:"  << targetframe.name << endl;
+        cv::waitKey(0);
+        pframeTomap->draw_Map();
         exit(EXIT_FAILURE);
     }
     else

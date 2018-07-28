@@ -41,6 +41,17 @@ enum
     DEE                 = 5,    // not finished yet
 };
 
+/* Flag of vertical rectification of camera and
+ * acceptable vertical disparity on the circumstance */
+const bool VERTICAL_REC = 1;
+const int MAX_VERTICAL_DISPARITY = 6;
+
+/* Threshold of image distance for matches discarding.
+ * The smaller of the value the larger of the acceptable depth */
+const int MIN_DISPARITY = 8;
+
+/* Threshold of good matches number for triangulation and interframe matching */
+/* The relatively larger of the value, the more stable of the estimation */
 const int GOOD_PTS_MAX = 300;
 const float GOOD_PORTION = 0.3f;
 
@@ -136,18 +147,25 @@ public:
     std::vector< int > vMappoints_indexnum;   // Map points' number in global map
 
     /* Id of inframe triangulated points of left & right images */
-    std::vector< int > vinframeinliermatches_queryIdx, vinframeinliermatches_trainIdx;
+    std::vector< int > vinframeinliermatches_queryIdx,
+                        vinframeinliermatches_trainIdx;
 
     /* Id of inter frame triangulated points of left & right images */
-    std::vector< int > vinterframematch_queryIdx, vinterframematch_trainIdx;
+    std::vector< int > vinterframematch_queryIdx,
+                        vinterframematch_trainIdx;
 
-    std::vector< cv::DMatch > vinframe_matches, vinframeinlier_matches;   // matches of the given stereo images
+    std::vector< cv::DMatch > vinframe_matches,
+                                vinframeinlier_matches;   // matches of the given stereo images
 
-    std::vector< cv::KeyPoint > vfeaturepoints_l, vfeaturepoints_r;     // featurepoints of left and right image
+    std::vector< cv::KeyPoint > vfeaturepoints_l,
+                                vfeaturepoints_r;     // featurepoints of left and right image
 
-    cv::Mat descriptors_l, descriptors_r; // descriptors of above featurepoints
+    cv::Mat descriptors_l,
+            descriptors_r; // descriptors of above featurepoints
 
-    cv::Mat fundamentalMat, essencialMat;
+    !!! can be shared !!!
+    initiation step to obtain correct fundamentalMat then share it
+    cv::Mat fundamentalMat; // fundamental matrix inner frame
 
     Map *pframeTomap;   // pointer points to the global point cloud map
 

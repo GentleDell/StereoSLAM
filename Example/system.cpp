@@ -246,12 +246,12 @@ int main()
             newframe.pframeTomap = &globalMap;      // record global map in the frame
             globalMap.frameMap.push_back(newframe); // record frame in the global map
 
-//            newframe.drawframe(left_image, right_image, DRAW_POINT_ONE);
+            newframe.drawframe(left_image, right_image, DRAW_LINE_ONE);
 
             if (imgfile_ct >= 1){
                 globalMap.frameMap[imgfile_ct -1].match_frames(globalMap.frameMap[imgfile_ct]);
 
-                if (imgfile_ct%200 == 0)
+                if (imgfile_ct%50 == 0)
                 {
                     globalMap.draw_Map();
                 }
