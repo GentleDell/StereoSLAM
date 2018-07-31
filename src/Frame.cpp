@@ -270,8 +270,8 @@ bool Frame::drawframe(cv::Mat image1, cv::Mat image2, int drawing_mode)
 
         // Create a cloud widget.
         std::vector< cv::Point3f > pointcloud;
-        for (int i_ct = 0; i_ct < pframeTomap->cloudMap.size(); i_ct++){
-            pointcloud.push_back( pframeTomap->cloudMap[i_ct].position );
+        for (int i_ct = 0; i_ct < vMappoints_indexnum.size(); i_ct++){
+            pointcloud.push_back( pframeTomap->cloudMap[ vMappoints_indexnum[i_ct] ].position );
         }
         cv::viz::WCloud cloud_widget(pointcloud, cv::viz::Color::green());
 
@@ -321,13 +321,14 @@ void Frame::find_inliers(std::vector<KeyPoint>& keypoints1, std::vector<KeyPoint
        dst_featpoint.push_back( keypoints2[ good_matches[i].trainIdx ].pt );
    }
 
-//    tempMat = findEssentialMat( src_featpoint, dst_featpoint, CamProjMat_l(Range(0,3), Range(0,3)),
-//                                     RANSAC, 0.999, 1.0, flag_inliermatches);
+    tempMat = findEssentialMat( src_featpoint, dst_featpoint, CamProjMat_l(Range(0,3), Range(0,3)),
+                                     RANSAC, 0.999, 1.0, flag_inliermatches);
 
-    tempMat = cv::findFundamentalMat(src_featpoint, dst_featpoint, flag_inliermatches, cv::FM_RANSAC, 2, 0.99);
+//    tempMat = cv::findFundamentalMat(src_featpoint, dst_featpoint, flag_inliermatches, cv::FM_RANSAC, 2, 0.99);
 
 
     /* After estimating fundamatal matrix, it would be better to conduct a guided search for matches */
+
     for (size_t i = 0; i < good_matches.size(); i++){
         if (flag_inliermatches.at<int>(1,i)){
             inlier_matches.push_back(good_matches[i]);
@@ -419,12 +420,10 @@ struct Match_3D_corresp
         }
     }
 
-//    cout << "both new points:" << vcorresp_bothnew.size() << "\n"
-//         << "1st new points:" << vcorresp_1stnew.size() << "\n"
-//         << "2nd new points:" << vcorresp_2ndnew.size() << "\n"
-//         << "no new points:" << vcorresp_nonew.size() << "\n"
-//         << "sum of all matches:" << vinterframe_matchesinlier.size() << endl;
-
+//    cout << "points for PNP:" << vcorresp_1stnew.size() << "\n"
+//         << "points for BPNP::" << vcorresp_2ndnew.size() << "\n"
+//         << "points for ICP & MICP:" << vcorresp_nonew.size() << "\n"
+//         << "points for DEE:" << vcorresp_bothnew.size() << endl;
 
 /// POSE ESTIMATION IS AT BELOW
 /// preprocessing
@@ -484,7 +483,16 @@ struct Match_3D_corresp
     /* Matched ICP 3D-3D */
     else if(algo == MICP)
     {
+        std::vector< cv::Point3f > vsrcPointCloud;
+        std::vector< cv::Point3f > vdstPointCloud;
 
+        for (int i_ct = 0; i_ct < vcorresp_nonew.size(); i_ct++)
+        {
+            vsrcPointCloud.push_back( pframeTomap->cloudMap[vcorresp_nonew[i_ct].index_3D_frame1].position );
+            vdstPointCloud.push_back( targetframe.pframeTomap->cloudMap[vcorresp_nonew[i_ct].index_3D_frame2].position );
+        }
+
+        pose = usr_operator.matched_ICP(vsrcPointCloud, vdstPointCloud);
     }
 
     /* Forward PnP 2D-3D
@@ -546,19 +554,20 @@ struct Match_3D_corresp
     }
 
     /* There must be some mistakes when translation is larger than 2, since the system is
-     * installed in a car or it is held by human, with a refreashing frequency of 25Hz */
-    else if( abs(pose(2, 3)) > 2 )
+     * installed in a car or it is held by human, with a refreashing frequency of 10Hz */
+    else if( pose(0, 3)*pose(0, 3) + pose(1, 3)*pose(1, 3) + pose(2, 3)*pose(2, 3) > REJECT_DISTANCE*REJECT_DISTANCE )
     {
         cout << "Error:" << "\n"
              << "Estimation of pose is unreliable. \n"
              << "System is Down in Frame:"  << targetframe.name << endl;
+        cout << "ill pose is:" << pose << endl;
         cv::waitKey(0);
         pframeTomap->draw_Map();
         exit(EXIT_FAILURE);
     }
     else
     {
-        targetframe.T_w2c = pose * T_w2c; // wrong
+        targetframe.T_w2c = pose * T_w2c;
     }
 }
 

@@ -41,6 +41,13 @@ enum
     DEE                 = 5,    // not finished yet
 };
 
+/* Max velocity of the holder, km/h.
+ * The quicker of the vehi, the higher of the rejecting threshold for pose estimation */
+const int MAX_VELOCITY = 72;
+const int DATA_FREQ = 10;   // Hz
+
+const float REJECT_DISTANCE = MAX_VELOCITY/3.6/DATA_FREQ;
+
 /* Flag of vertical rectification of camera and
  * acceptable vertical disparity on the circumstance */
 const bool VERTICAL_REC = 1;
@@ -52,8 +59,8 @@ const int MIN_DISPARITY = 8;
 
 /* Threshold of good matches number for triangulation and interframe matching */
 /* The relatively larger of the value, the more stable of the estimation */
-const int GOOD_PTS_MAX = 300;
-const float GOOD_PORTION = 0.3f;
+const int GOOD_PTS_MAX = 200;
+const float GOOD_PORTION = 0.2f;
 
 class Map;
 
@@ -163,8 +170,8 @@ public:
     cv::Mat descriptors_l,
             descriptors_r; // descriptors of above featurepoints
 
-    !!! can be shared !!!
-    initiation step to obtain correct fundamentalMat then share it
+//    !!! can be shared !!!
+//    initiation step to obtain correct fundamentalMat then share it
     cv::Mat fundamentalMat; // fundamental matrix inner frame
 
     Map *pframeTomap;   // pointer points to the global point cloud map

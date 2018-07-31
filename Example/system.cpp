@@ -23,6 +23,7 @@ using namespace std;
 using namespace cv::xfeatures2d;
 
 const int KITTI_NAME_LENGTH = 6; // name length of images in KITTI dataset
+const int START_FRAME = 0;
 
 void mix_image(Mat & left_image, Mat & righ_image)
 {
@@ -232,7 +233,7 @@ int main()
         }
         cout << Pl << "\n" << Pr << endl;
 
-        for(int imgfile_ct = 0; ; imgfile_ct ++)
+        for(int imgfile_ct = START_FRAME; ; imgfile_ct ++)
         {
             if(!load_image(left_image, right_image, filepath, imgfile_ct))
             {
@@ -246,13 +247,14 @@ int main()
             newframe.pframeTomap = &globalMap;      // record global map in the frame
             globalMap.frameMap.push_back(newframe); // record frame in the global map
 
-            newframe.drawframe(left_image, right_image, DRAW_LINE_ONE);
+//            newframe.drawframe(left_image, right_image, DRAW_3D_POINT);
 
-            if (imgfile_ct >= 1){
-                globalMap.frameMap[imgfile_ct -1].match_frames(globalMap.frameMap[imgfile_ct]);
+            if (imgfile_ct >= START_FRAME+1){
+                globalMap.frameMap[imgfile_ct - START_FRAME - 1].match_frames(globalMap.frameMap[imgfile_ct - START_FRAME]);
 
-                if (imgfile_ct%50 == 0)
+                if (imgfile_ct%20 == 0)
                 {
+//                    newframe.drawframe(left_image, right_image, DRAW_3D_POINT);
                     globalMap.draw_Map();
                 }
             }

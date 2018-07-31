@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <vector>
 #include <iostream>
+#include <numeric>
 
 #include <opencv2/core.hpp>
 #include "opencv2/calib3d.hpp"
@@ -16,7 +17,8 @@ class Usrmath
 public:
 
 /// Estimate R & t
-    cv::Mat matched_ICP();
+    cv::Matx44d matched_ICP(std::vector< cv::Point3f > vsrcPointCloud,
+                        std::vector< cv::Point3f > vdstPointCloud, int flag = 0);
 
     cv::Matx44d standard_ICP(cv::Mat srcPC, cv::Mat dstPC, cv::Matx44d initialpose);
 
