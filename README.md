@@ -19,13 +19,13 @@ The GSL is used for calculating linear algebra. You can download it in: ftp://ft
 To make sure that all required libraries are intalled correctly, a [repository](https://github.com/GentleDell/BasicCVProgram) is provided to test these libraries. 
 
 # Results
-In July 2018, the front end has been completed and has been tested on KITTI dataset 00. A brief result of the front end is shown below: 
+In July 2018, the front end was completed and was tested on KITTI dataset 00. A brief result of the front end is shown below: 
 ![kitti_00](https://user-images.githubusercontent.com/23701665/50575271-fdf2a200-0dfb-11e9-95d9-212ac70930ba.png)
 
 # What to do
-###1. Loopclosing
-In recent years, many matchine learning methods perform very well in scenaries recognition, so we would like to use matchine learning technques to realize a robust loop closure.
+### 1. Loopclosing
+In recent years, many matchine learning methods perform very well on scenaries recognition, so we would like to use matchine learning technques to realize a robust loop closure.
 
-###2. Optimization
-In ORBSLAM, g2o is used for optimization. In google's catographer and HKUST-Aerial-Robotics VINS, ceres is used. So, We would like to use g2o or ceres as our solver. 
+### 2.Optimization
+In ORBSLAM, g2o is used for optimization. In google's catographer and HKUST-Aerial-Robotics VINS, ceres is used. So, We would like to choose g2o or ceres as our solver. 
 
