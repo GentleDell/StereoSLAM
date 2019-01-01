@@ -23,8 +23,9 @@ In July 2018, the front end has been completed and has been tested on KITTI data
 ![kitti_00](https://user-images.githubusercontent.com/23701665/50575271-fdf2a200-0dfb-11e9-95d9-212ac70930ba.png)
 
 # What to do
-1. Loopclosing
+###1. Loopclosing
 In recent years, many matchine learning methods perform very well in scenaries recognition, so we would like to use matchine learning technques to realize a robust loop closure.
-2. Optimization
+
+###2. Optimization
 In ORBSLAM, g2o is used for optimization. In google's catographer and HKUST-Aerial-Robotics VINS, ceres is used. So, We would like to use g2o or ceres as our solver. 
 
