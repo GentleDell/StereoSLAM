@@ -20,7 +20,7 @@ To make sure that all required libraries are intalled correctly, a [repository](
 
 # Results
 In July 2018, the front end has been completed and has been tested on KITTI dataset 00. A brief result of the front end is shown below: 
-[demo 1](https://github.com/GentleDell/StereoSLAM/blob/master/KITTI_00.png)
+![kitti_00](https://user-images.githubusercontent.com/23701665/50575271-fdf2a200-0dfb-11e9-95d9-212ac70930ba.png)
 
 # What to do
 1. Loopclosing
